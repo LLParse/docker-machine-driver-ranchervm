@@ -1,0 +1,11 @@
+package: github.com/rancher/docker-machine-ranchervm
+import:
+- package: github.com/docker/machine
+  version: ^0.16.0
+  subpackages:
+  - libmachine/drivers
+  - libmachine/drivers/plugin
+  - libmachine/log
+  - libmachine/mcnflag
+  - libmachine/ssh
+  - libmachine/state
