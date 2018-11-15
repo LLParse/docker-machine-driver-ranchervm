@@ -1,1 +1,2 @@
-bin/docker-machine-driver-ranchervm*
+bin/docker-machine-driver-ranchervm
+release/

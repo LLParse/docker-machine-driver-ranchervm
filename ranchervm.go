@@ -2,21 +2,42 @@ package ranchervm
 
 import (
 	"fmt"
+	"math/rand"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
-	"github.com/prometheus/common/log"
+	"github.com/rancher/vm/pkg/server"
+	"github.com/rancher/vm/pkg/server/client"
+
+	api "github.com/rancher/vm/pkg/apis/ranchervm/v1alpha1"
 )
 
 const (
 	defaultSSHUser = "docker"
 )
 
+// Driver is the RancherVM
 type Driver struct {
 	*drivers.BaseDriver
-	MemoryMiB int
-	CPU       int
+	Endpoint           string
+	InsecureSkipVerify bool
+	AccessKey          string
+	SecretKey          string
+	CPU                int
+	MemoryMiB          int
+	Image              string
+	SSHKeyName         string
+	SSHKeyDelete       bool
+	EnableNoVNC        bool
+	NodeName           string
+
+	client *client.RancherVMClient
 }
 
 func NewDriver(hostName, storePath string) drivers.Driver {
@@ -29,10 +50,74 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 	}
 }
 
+func (d *Driver) getClient() *client.RancherVMClient {
+	if d.client == nil {
+		d.client = client.NewRancherVMClient(d.Endpoint, d.AccessKey, d.SecretKey, d.InsecureSkipVerify)
+	}
+	return d.client
+}
+
+func randomString(n int, alphabet string) string {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = alphabet[r.Intn(len(alphabet))]
+	}
+	return string(b)
+}
+
+func generateSSHKeyName(name string) string {
+	suffix := randomString(5, "0123456789abcdef")
+	return strings.Join([]string{name, suffix}, "-")
+}
+
+func generateSSHKey(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("Desired directory for SSH keys does not exist: %s", err)
+		}
+
+		kp, err := ssh.NewKeyPair()
+		if err != nil {
+			return "", fmt.Errorf("Error generating key pair: %s", err)
+		}
+		if err := kp.WriteToFile(path, fmt.Sprintf("%s.pub", path)); err != nil {
+			return "", fmt.Errorf("Error writing keys to file(s): %s", err)
+		}
+		return string(kp.PublicKey), nil
+	}
+
+	return "", fmt.Errorf("Key pair already exists: %s", path)
+}
+
 // Create a host using the driver's config
 func (d *Driver) Create() error {
-	// TODO
-	return nil
+	if d.SSHKeyName == "" {
+		keyName := generateSSHKeyName(d.MachineName)
+		publicKey, err := generateSSHKey(d.GetSSHKeyPath())
+		if err != nil {
+			return err
+		}
+		err = d.getClient().CredentialCreate(keyName, publicKey)
+		if err != nil {
+			return err
+		}
+		d.SSHKeyName = keyName
+		d.SSHKeyDelete = true
+		// FIXME: ranchervm creates vm pod before informer cache receives the new credential
+		time.Sleep(3 * time.Second)
+	}
+
+	return d.getClient().InstanceCreate(server.Instance{
+		Name:        d.MachineName,
+		Cpus:        d.CPU,
+		Memory:      d.MemoryMiB,
+		Image:       d.Image,
+		Action:      string(api.ActionStart),
+		PublicKeys:  []string{d.SSHKeyName},
+		HostedNovnc: d.EnableNoVNC,
+		NodeName:    d.NodeName,
+	}, 1)
 }
 
 // DriverName returns the name of the driver
@@ -43,17 +128,66 @@ func (d *Driver) DriverName() string {
 // GetCreateFlags returns the mcnflag.Flag slice representing the flags
 // that can be set, their descriptions and defaults.
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
-	// TODO
 	return []mcnflag.Flag{
+		mcnflag.StringFlag{
+			Name:  "ranchervm-endpoint",
+			Usage: "RancherVM endpoint",
+			Value: "",
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-access-key",
+			Usage: "Rancher API Access Key",
+			Value: "",
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-secret-key",
+			Usage: "Rancher API Secret Key",
+			Value: "",
+		},
+		mcnflag.BoolFlag{
+			Name:  "ranchervm-insecure-skip-verify",
+			Usage: "Skip TLS certificate verification for HTTP requests to RancherVM",
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-ssh-user",
+			Usage: "Name of SSH user",
+			Value: "ubuntu",
+		},
 		mcnflag.IntFlag{
-			Name:  "ranchervm-memory-mib",
-			Usage: "Memory in MiB",
-			Value: 1024,
+			Name:  "ranchervm-ssh-port",
+			Usage: "SSH port",
+			Value: drivers.DefaultSSHPort,
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-ssh-key-name",
+			Usage: "Use an existing SSH key instead of generating one",
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-ssh-key-path",
+			Usage: "Path to private SSH key",
 		},
 		mcnflag.IntFlag{
 			Name:  "ranchervm-cpu-count",
 			Usage: "Number of CPUs",
 			Value: 1,
+		},
+		mcnflag.IntFlag{
+			Name:  "ranchervm-memory-mib",
+			Usage: "Memory in MiB",
+			Value: 1024,
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-image",
+			Usage: "Docker image containing qcow2 disk image",
+			Value: "llparse/vm-ubuntu:rancher-2.1.1",
+		},
+		mcnflag.BoolFlag{
+			Name:  "ranchervm-novnc",
+			Usage: "Enable NoVNC, a browser-based VNC client accessible from Rancher UI",
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-node-name",
+			Usage: "Name of Kubernetes node to schedule machine to",
 		},
 	}
 }
@@ -61,13 +195,14 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 // GetIP returns an IP or hostname that this host is available at
 // e.g. 1.2.3.4 or docker-host-d60b70a14d3a.cloudapp.net
 func (d *Driver) GetIP() (string, error) {
-	// TODO
-	return "", nil
-}
-
-// GetMachineName returns the name of the machine
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
+	instance, err := d.getClient().InstanceGet(d.MachineName)
+	if err != nil {
+		return "", err
+	}
+	if instance.Status.IP == "" {
+		return "", fmt.Errorf("IP address is not set")
+	}
+	return instance.Status.IP, nil
 }
 
 // GetSSHHostname returns hostname for use with ssh
@@ -75,33 +210,9 @@ func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
 }
 
-// GetSSHKeyPath returns key path for use with ssh
-func (d *Driver) GetSSHKeyPath() string {
-	return d.ResolveStorePath("id_rsa")
-}
-
-// GetSSHPort returns port for use with ssh
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
-}
-
-// GetSSHUsername returns username for use with ssh
-func (d *Driver) GetSSHUsername() string {
-	if d.SSHUser == "" {
-		d.SSHUser = "rancher"
-	}
-
-	return d.SSHUser
-}
-
 // GetURL returns a Docker compatible host URL for connecting to this host
 // e.g. tcp://1.2.3.4:2376
 func (d *Driver) GetURL() (string, error) {
-	log.Debugf("GetURL called")
 	ip, err := d.GetIP()
 	if err != nil {
 		log.Warnf("Failed to get IP: %s", err)
@@ -110,59 +221,121 @@ func (d *Driver) GetURL() (string, error) {
 	if ip == "" {
 		return "", nil
 	}
-	return fmt.Sprintf("tcp://%s:2375", ip), nil
+	return fmt.Sprintf("tcp://%s:2376", ip), nil
 }
 
 // GetState returns the state that the host is in (running, stopped, etc)
 func (d *Driver) GetState() (state.State, error) {
-	// TODO
+	instance, err := d.getClient().InstanceGet(d.MachineName)
+	if err != nil {
+		return state.None, err
+	}
+
+	switch instance.Status.State {
+	case api.StatePending:
+		return state.Starting, nil
+	case api.StateRunning:
+		return state.Running, nil
+	case api.StateStopping:
+		return state.Stopping, nil
+	case api.StateStopped:
+		return state.Stopped, nil
+	case api.StateTerminating:
+		return state.Stopped, nil
+	case api.StateTerminated:
+		return state.Stopped, nil
+	case api.StateMigrating:
+		return state.Running, nil
+	case api.StateError:
+		return state.Error, nil
+	}
 	return state.None, nil
 }
 
 // Kill stops a host forcefully
 func (d *Driver) Kill() error {
-	// TODO
-	return nil
+	return d.getClient().InstanceStop(d.MachineName)
 }
 
 // PreCreateCheck allows for pre-create operations to make sure a driver is ready for creation
 func (d *Driver) PreCreateCheck() error {
-	// TODO
+	instance, err := d.getClient().InstanceGet(d.MachineName)
+	if err != nil {
+		return err
+	}
+	if instance != nil {
+		return fmt.Errorf("MachineName %s already taken", d.MachineName)
+	}
+
+	if d.SSHKeyName != "" {
+		credential, err := d.getClient().CredentialGet(d.SSHKeyName)
+		if err != nil {
+			return err
+		}
+		if credential == nil {
+			return fmt.Errorf("SSHKeyName %s not found", d.SSHKeyName)
+		}
+	}
 	return nil
 }
 
 // Remove a host
 func (d *Driver) Remove() error {
-	// TODO
+	if d.SSHKeyDelete {
+		if err := d.getClient().CredentialDelete(d.SSHKeyName); err != nil {
+			return err
+		}
+	}
+
+	if err := d.getClient().InstanceDelete(d.MachineName); err != nil {
+		return err
+	}
+
+	t := time.NewTicker(3 * time.Second)
+	for _ = range t.C {
+		if instance, err := d.getClient().InstanceGet(d.MachineName); err != nil {
+			return err
+		} else if instance == nil {
+			break
+		}
+	}
 	return nil
 }
 
 // Restart a host. This may just call Stop(); Start() if the provider does not
 // have any special restart behaviour.
 func (d *Driver) Restart() error {
-	// TODO
-	return nil
+	if err := d.Stop(); err != nil {
+		return err
+	}
+	return d.Start()
 }
 
 // SetConfigFromFlags configures the driver with the object that was returned
 // by RegisterCreateFlags
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
-	log.Debugf("SetConfigFromFlags called")
-	d.MemoryMiB = flags.Int("ranchervm-memory-mib")
+	d.Endpoint = flags.String("ranchervm-endpoint")
+	d.AccessKey = flags.String("ranchervm-access-key")
+	d.SecretKey = flags.String("ranchervm-secret-key")
+	d.InsecureSkipVerify = flags.Bool("ranchervm-insecure-skip-verify")
 	d.CPU = flags.Int("ranchervm-cpu-count")
-	d.SSHUser = "rancher"
-	d.SSHPort = 22
+	d.MemoryMiB = flags.Int("ranchervm-memory-mib")
+	d.Image = flags.String("ranchervm-image")
+	d.EnableNoVNC = flags.Bool("ranchervm-novnc")
+	d.NodeName = flags.String("ranchervm-node-name")
+	d.SSHKeyName = flags.String("ranchervm-ssh-key-name")
+	d.SSHKeyPath = flags.String("ranchervm-ssh-key-path")
+	d.SSHUser = flags.String("ranchervm-ssh-user")
+	d.SSHPort = flags.Int("ranchervm-ssh-port")
 	return nil
 }
 
 // Start a host
 func (d *Driver) Start() error {
-	// TODO
-	return nil
+	return d.getClient().InstanceStart(d.MachineName)
 }
 
 // Stop a host gracefully
 func (d *Driver) Stop() error {
-	// TODO
-	return nil
+	return d.getClient().InstanceStop(d.MachineName)
 }

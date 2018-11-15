@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	plugin.RegisterDriver(ranchervm.NewDriver("default", "path"))
+	plugin.RegisterDriver(ranchervm.NewDriver("", ""))
 }
