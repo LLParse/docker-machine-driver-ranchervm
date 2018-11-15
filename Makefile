@@ -37,7 +37,7 @@ tag-release:
 dist-clean:
 	rm -rf release
 
-dist:
+dist: dist-clean
 	mkdir -p release
 	GOOS=linux GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-linux-amd64 ./bin
 	GOOS=darwin GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-darwin-amd64 ./bin

@@ -3,7 +3,9 @@ package ranchervm
 import (
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,7 +24,7 @@ const (
 	defaultSSHUser = "docker"
 )
 
-// Driver is the RancherVM
+// Driver is the RancherVM Driver struct
 type Driver struct {
 	*drivers.BaseDriver
 	Endpoint           string
@@ -40,6 +42,7 @@ type Driver struct {
 	client *client.RancherVMClient
 }
 
+// NewDriver constructs a new RancherVM Driver
 func NewDriver(hostName, storePath string) drivers.Driver {
 	return &Driver{
 		BaseDriver: &drivers.BaseDriver{
@@ -92,6 +95,7 @@ func generateSSHKey(path string) (string, error) {
 
 // Create a host using the driver's config
 func (d *Driver) Create() error {
+
 	if d.SSHKeyName == "" {
 		keyName := generateSSHKeyName(d.MachineName)
 		publicKey, err := generateSSHKey(d.GetSSHKeyPath())
@@ -103,9 +107,42 @@ func (d *Driver) Create() error {
 			return err
 		}
 		d.SSHKeyName = keyName
+		// If keypair name wasn't specified, we'll assume the keypair is
+		// disposable and delete it when the machine is deleted
 		d.SSHKeyDelete = true
+
 		// FIXME: ranchervm creates vm pod before informer cache receives the new credential
 		time.Sleep(3 * time.Second)
+
+	} else {
+		credential, err := d.getClient().CredentialGet(d.SSHKeyName)
+		if err != nil {
+			return err
+		}
+		if credential == nil {
+			publicKey, err := generateSSHKey(d.GetSSHKeyPath())
+			if err != nil {
+				return err
+			}
+			err = d.getClient().CredentialCreate(d.SSHKeyName, publicKey)
+			if err != nil {
+				// A race exists when creating many machines concurrently with
+				// a named, but not yet generated keypair. We must therefore
+				// tolerate any 409 conflict errors received in this context.
+				if !strings.Contains(err.Error(), http.StatusText(http.StatusConflict)) {
+					return err
+				}
+			}
+			// When generating a named keypair, do NOT automatically delete it
+			// because the keypair is expected to be reused by other machines
+			d.SSHKeyDelete = false
+
+			// FIXME: ranchervm creates vm pod before informer cache receives the new credential
+			time.Sleep(3 * time.Second)
+		} else {
+			// TODO: verify we have the private key. The public key might've
+			// been uploaded manually by user, in which case we can't use it
+		}
 	}
 
 	return d.getClient().InstanceCreate(server.Instance{
@@ -150,7 +187,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			Name:  "ranchervm-ssh-user",
-			Usage: "Name of SSH user",
+			Usage: "SSH user",
 			Value: "ubuntu",
 		},
 		mcnflag.IntFlag{
@@ -160,7 +197,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		},
 		mcnflag.StringFlag{
 			Name:  "ranchervm-ssh-key-name",
-			Usage: "Use an existing SSH key instead of generating one",
+			Usage: "Use a shared SSH key",
 		},
 		mcnflag.StringFlag{
 			Name:  "ranchervm-ssh-key-path",
@@ -202,6 +239,7 @@ func (d *Driver) GetIP() (string, error) {
 	if instance.Status.IP == "" {
 		return "", fmt.Errorf("IP address is not set")
 	}
+	d.IPAddress = instance.Status.IP
 	return instance.Status.IP, nil
 }
 
@@ -266,16 +304,6 @@ func (d *Driver) PreCreateCheck() error {
 	if instance != nil {
 		return fmt.Errorf("MachineName %s already taken", d.MachineName)
 	}
-
-	if d.SSHKeyName != "" {
-		credential, err := d.getClient().CredentialGet(d.SSHKeyName)
-		if err != nil {
-			return err
-		}
-		if credential == nil {
-			return fmt.Errorf("SSHKeyName %s not found", d.SSHKeyName)
-		}
-	}
 	return nil
 }
 
@@ -300,6 +328,15 @@ func (d *Driver) Remove() error {
 		}
 	}
 	return nil
+}
+
+// ResolveStorePath returns a unique or shared store path
+func (d *Driver) ResolveStorePath(file string) string {
+	if d.SSHKeyName == "" {
+		return filepath.Join(d.StorePath, "machines", d.MachineName, file)
+	}
+	return filepath.Join(d.StorePath, "machines",
+		strings.Join([]string{d.DriverName(), d.SSHKeyName, file}, "."))
 }
 
 // Restart a host. This may just call Stop(); Start() if the provider does not
