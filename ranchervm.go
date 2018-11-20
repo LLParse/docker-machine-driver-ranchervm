@@ -14,10 +14,9 @@ import (
 	"github.com/docker/machine/libmachine/mcnflag"
 	"github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
+	api "github.com/rancher/vm/pkg/apis/ranchervm/v1alpha1"
 	"github.com/rancher/vm/pkg/server"
 	"github.com/rancher/vm/pkg/server/client"
-
-	api "github.com/rancher/vm/pkg/apis/ranchervm/v1alpha1"
 )
 
 const (
