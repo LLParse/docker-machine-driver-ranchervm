@@ -38,6 +38,11 @@ type Driver struct {
 	EnableNoVNC        bool
 	NodeName           string
 
+	LonghornBacking        bool
+	LonghornVolumeSize     string
+	LonghornReplicaCount   int
+	LonghornReplicaTimeout int
+
 	client *client.RancherVMClient
 }
 
@@ -225,6 +230,26 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:  "ranchervm-node-name",
 			Usage: "Name of Kubernetes node to schedule machine to",
 		},
+		mcnflag.BoolFlag{
+			Name:  "ranchervm-longhorn",
+			Usage: "Use Longhorn storage provider instead of host filesystem",
+		},
+		// TODO longhorn should eventually infer size from disk image
+		mcnflag.StringFlag{
+			Name:  "ranchervm-longhorn-image-size",
+			Usage: "Size of the qcow2 disk image, currently required by Longhorn",
+			Value: "50Gi",
+		},
+		mcnflag.IntFlag{
+			Name:  "ranchervm-longhorn-replica-count",
+			Usage: "Number of replicas to back Longhorn volume with",
+			Value: 3,
+		},
+		mcnflag.IntFlag{
+			Name:  "ranchervm-longhorn-replica-timeout",
+			Usage: "Time (in seconds) to wait before replacing an unresponsive replica",
+			Value: 30,
+		},
 	}
 }
 
@@ -363,6 +388,10 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SSHKeyPath = flags.String("ranchervm-ssh-key-path")
 	d.SSHUser = flags.String("ranchervm-ssh-user")
 	d.SSHPort = flags.Int("ranchervm-ssh-port")
+	d.LonghornBacking = flags.Bool("ranchervm-longhorn")
+	d.LonghornVolumeSize = flags.String("ranchervm-longhorn-image-size")
+	d.LonghornReplicaCount = flags.Int("ranchervm-longhorn-replica-count")
+	d.LonghornReplicaTimeout = flags.Int("ranchervm-longhorn-replica-timeout")
 	return nil
 }
 
