@@ -39,9 +39,9 @@ dist-clean:
 
 dist: dist-clean
 	mkdir -p release
-	GOOS=linux GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-linux-amd64 ./bin
-	GOOS=darwin GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-darwin-amd64 ./bin
-	GOOS=windows GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-windows-amd64.exe ./bin
+	GOOS=linux GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-Linux-x86_64 ./bin
+	GOOS=darwin GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-Darwin-x86_64 ./bin
+	GOOS=windows GOARCH=amd64 CGOENABLED=0 go build -o release/$(name)-Windows-x86_64.exe ./bin
 	for file in release/$(name)-*; do openssl dgst -md5 < $${file} > $${file}.md5; openssl dgst -sha256 < $${file} > $${file}.sha256; done
 
 release:

@@ -9,4 +9,4 @@ import:
   - libmachine/ssh
   - libmachine/state
 - package: github.com/rancher/vm
-  version: 03d33ecdae3eef86e0a526833803ab9694479de7
+  version: ccdb1769886813bde1138a7fad903d06de33b34e
