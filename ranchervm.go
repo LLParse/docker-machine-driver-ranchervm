@@ -59,7 +59,8 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 
 func (d *Driver) getClient() *client.RancherVMClient {
 	if d.client == nil {
-		d.client = client.NewRancherVMClient(d.Endpoint, d.AccessKey, d.SecretKey, d.InsecureSkipVerify)
+		endpoint := strings.TrimSuffix(d.Endpoint, "/")
+		d.client = client.NewRancherVMClient(endpoint, d.AccessKey, d.SecretKey, d.InsecureSkipVerify)
 	}
 	return d.client
 }
