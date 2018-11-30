@@ -149,6 +149,18 @@ func (d *Driver) Create() error {
 		}
 	}
 
+	volume := api.VolumeSource{}
+	if d.LonghornBacking {
+		volume.Longhorn = &api.LonghornVolumeSource{
+			Size:                d.LonghornVolumeSize,
+			BaseImage:           d.Image,
+			NumberOfReplicas:    d.LonghornReplicaCount,
+			StaleReplicaTimeout: d.LonghornReplicaTimeout,
+		}
+	} else {
+		volume.EmptyDir = &api.EmptyDirVolumeSource{}
+	}
+
 	return d.getClient().InstanceCreate(server.Instance{
 		Name:        d.MachineName,
 		Cpus:        d.CPU,
@@ -158,6 +170,7 @@ func (d *Driver) Create() error {
 		PublicKeys:  []string{d.SSHKeyName},
 		HostedNovnc: d.EnableNoVNC,
 		NodeName:    d.NodeName,
+		Volume:      volume,
 	}, 1)
 }
 
