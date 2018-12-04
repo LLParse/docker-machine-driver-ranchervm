@@ -40,6 +40,7 @@ type Driver struct {
 
 	LonghornBacking        bool
 	LonghornVolumeSize     string
+	LonghornFrontend       string
 	LonghornReplicaCount   int
 	LonghornReplicaTimeout int
 
@@ -154,6 +155,7 @@ func (d *Driver) Create() error {
 	if d.LonghornBacking {
 		volume.Longhorn = &api.LonghornVolumeSource{
 			Size:                d.LonghornVolumeSize,
+			Frontend:            d.LonghornFrontend,
 			BaseImage:           d.Image,
 			NumberOfReplicas:    d.LonghornReplicaCount,
 			StaleReplicaTimeout: d.LonghornReplicaTimeout,
@@ -253,6 +255,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:  "ranchervm-longhorn-image-size",
 			Usage: "Size of the qcow2 disk image, currently required by Longhorn",
 			Value: "50Gi",
+		},
+		mcnflag.StringFlag{
+			Name:  "ranchervm-longhorn-frontend",
+			Usage: "Frontend to expose Longhorn volume with: blockdev, iscsi",
+			Value: "blockdev",
 		},
 		mcnflag.IntFlag{
 			Name:  "ranchervm-longhorn-replica-count",
@@ -404,6 +411,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SSHPort = flags.Int("ranchervm-ssh-port")
 	d.LonghornBacking = flags.Bool("ranchervm-longhorn")
 	d.LonghornVolumeSize = flags.String("ranchervm-longhorn-image-size")
+	d.LonghornFrontend = flags.String("ranchervm-longhorn-frontend")
 	d.LonghornReplicaCount = flags.Int("ranchervm-longhorn-replica-count")
 	d.LonghornReplicaTimeout = flags.Int("ranchervm-longhorn-replica-timeout")
 	return nil
