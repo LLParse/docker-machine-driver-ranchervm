@@ -1,5 +1,5 @@
-hash: b5643ac5ee7da5bceae9b0eda79f466a7a78e47c46c8caaa0a1d887dce425b20
-updated: 2018-11-29T22:58:26.507964-07:00
+hash: 8de5e6a79e90022856daf6b65a5415d4896a6f58d1f61b4c85d0f302e568f728
+updated: 2018-12-04T09:56:54.78532-07:00
 imports:
 - name: github.com/Azure/go-ansiterm
   version: d6e3b3328b783f23731bc4d058875b0371ff8109
@@ -78,7 +78,7 @@ imports:
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
 - name: github.com/rancher/vm
-  version: ccdb1769886813bde1138a7fad903d06de33b34e
+  version: a36176889d3f3a7bdc67c31d647481a785a46c82
   subpackages:
   - pkg/apis/ranchervm/v1alpha1
   - pkg/client/clientset/versioned
@@ -102,7 +102,7 @@ imports:
   - ssh
   - ssh/terminal
 - name: golang.org/x/net
-  version: 1c05540f6879653db88113bc4a2b70aec4bd491f
+  version: 0ed95abb35c445290478a5348a7b38bb154135fd
   subpackages:
   - context
   - html
@@ -133,7 +133,7 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 670d4cfef0544295bc27a114dbac37980d83185a
 - name: k8s.io/api
-  version: 4e7be11eab3ffcfc1876898b8272df53785a9504
+  version: 2dd39edadc55ab8a4ab2b27b84a9ed1b467ef47e
   subpackages:
   - admissionregistration/v1alpha1
   - admissionregistration/v1beta1
@@ -165,7 +165,7 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apimachinery
-  version: 70adfbae261eebb795b76321790745ad0e3c523f
+  version: 3d8ee2261517413977a62256b7d79644d7ffdc43
   subpackages:
   - pkg/api/errors
   - pkg/api/meta
@@ -206,7 +206,7 @@ imports:
   - pkg/watch
   - third_party/forked/golang/reflect
 - name: k8s.io/client-go
-  version: 56e7a63b5e38b614bb7cb8c49ed26dc991b324c4
+  version: 573fc71f7a51eb0720524b3973d465dcde5566e6
   subpackages:
   - discovery
   - informers/core/v1
